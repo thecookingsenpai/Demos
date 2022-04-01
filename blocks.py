@@ -5,3 +5,4 @@ class BLOCK:
         self.tx_list = []
         self.signers = []
         self.signing_proofs = []
+        self.timestamp = 0

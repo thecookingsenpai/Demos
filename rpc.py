@@ -9,14 +9,20 @@ from Crypto.Hash import SHA256
 from Crypto.Signature import pkcs1_15
 import time
 import multiprocessing
+from multiprocessing import connection
+from gevent.pywsgi import WSGIServer
+import votes
 
-node = entity.ENTITY(existing_private="account/keystore/accountPrivateKey")
+node = entity.ENTITY()#existing_private="account/keystore/accountPrivateKey")
+vote = votes.VOTE()
+
+forge_time = False
 
 app = Flask(__name__)
 
 # API to receive votes
 @app.route("/vote", methods=['POST'])
-def process_json():
+def process_vote_json():
     content_type = request.headers.get('Content-Type')
     if (content_type == 'application/json'):
         json = request.json
@@ -30,11 +36,77 @@ def process_json():
         if valid:
             node.democracy.has_voted.append(actual_vote.get("from"))
             node.democracy.votes[actual_vote.get("from")] = actual_vote.get("vote")
+            print("Voting succeeded.")
             return True, "Ok"
         else:
+            print("Invalid signature")
             return False, "Bad signature"
-    
+                 
+# Wait for the vote to be finished (thanks to multiprocessing, still receiving new votes)
+def wait_for_vote_finish(self):
+    timeout = 10.000
+    while not vote.has_vote_finish(node.democracy):
+        timer += 0.300
+        if timer > timeout:
+            return False, "Timeout"
+    return True, "Finished"
 
+# Voting interface
+def voting_routine():
+    # Vote for a candidate and broadcast it
+    candidate = node.decide_votation()
+    node.broadcast_vote(candidate)
+    # Cycle until everybody voted or timed out
+    success, reason = wait_for_vote_finish()
+    if not success:
+        print("Voting failed: " + reason)
+        return False, "Voting failed: " + str(reason)
+    else:
+        print("Votation done!")
+        # Determine winners
+        validators, controllers = node.democracy.count_winners()
+        # If is a validator or controller, 
+        if node.pubkey in validators or node.pubkey in controllers:
+            proposed_block = node.create_block()
+            node.broadcast_block(proposed_block)
+            result, message, penalities = wait_for_validation()
+        else:
+            # Cycle until the validators did their job
+            result, message, penalities = wait_for_validation()
+        # Accept block
+        if result:
+            accpet_validated_block(message)
+            # TODO just record penalties
+            # Clear the mempool to not include double tx
+            node.clear_mempool()
+        # Ignore this consensus
+        else:
+            pass
+        
+def wait_for_validation():
+    timeout = 10.000
+    step = 0.333
+    counter = 0.000
+    going = False
+    # Keep checking for values of validators in the pool
+    while counter < timeout:
+        counter += step
+        for validator in node.agreement_pool:
+            value = node.agreement_pool.get(validator)
+            if value == "":
+                # Detected an empty one
+                going = True
+        # Completed
+        if not going:
+            break
+    # Timeout
+    if going:
+        return False, "Timeout"
+    # Coherency check
+    else:
+        coherency_status, message, penalities = node.agreement_pool.coherency()
+        return coherency_status, message, penalities
+    
 def is_a_tx(json):
     try:
         if "data" in json.keys() and "signature" in json.keys:
@@ -61,74 +133,93 @@ def process_json():
             valid = node.validate_signature(tx.data.get("from"), tx)
             if valid:
                 node.mempool_tx(json)
+                print("Accepted tx " + json.get("signature"))
                 return "Ok!", 200
             else:
+                print("Bad signature (403)")
                 return "Bad signature", 403
         else:
+            print("Not a TX (400)")
             return "Not a valid tx!", 400
     else:
+        print("Content unsupported (400)")
         return 'Content-Type not supported!', 400
     
 
-def validate_signatures(signers, proofs):
+def validate_signatures(signer):
     # Without wasting time, lengths need to be the same
-    if not len(signers) == len(proofs):
+    if not len(signer) == len(proof):
         return False
-    # Parse signers and proofs to determine if are legit
+    # Parse signer and proof to determine if are legit
     cursor = 0
-    for sign in signers:
+    for sign in signer:
         usable_key = RSA.import_key(sign)
-        hashed_proof = SHA256.new(proofs[cursor])
+        hashed_proof = SHA256.new(proof[cursor])
         try:
-            pkcs1_15.new(usable_key).verify(hashed_proof, signers[cursor])
+            pkcs1_15.new(usable_key).verify(hashed_proof, signer[cursor])
         except:
             return False
         cursor += 1
     return True
-    
+
+# If and only if a validator propose, the block is registered in the agreement_pool
 @app.route("/blocks", methods=['POST'])
-def validate_block():
-    content = request.json
-    if not "block_number" in content or not "signers" in content \
-        or not "tx_list" in content or not "signing_proofs"in content:
+def accpet_validated_block(content):
+    if not "block_number" in content or not "signer" in content \
+        or not "tx_list" in content or not "signing_proof"in content:
+            print("Malformed block received")
             return False, "Malformed block received"
     # Loading the json into an actual block
     loaded_block = blocks.BLOCK()
     loaded_block.block_number = content.get("block_number")
     loaded_block.tx_list = content.get("tx_list")
-    loaded_block.signers = content.get("signers")
-    loaded_block.signing_proofs = content.get("signing_proof")
+    loaded_block.signer = content.get("signer")
+    loaded_block.signing_proof = content.get("signing_proof")
     # Ensuring signature validity
-    result = self.validate_signatures(loaded_block.signers, loaded_block.signing_proofs)
+    result = node.validate_signatures(loaded_block.signer, loaded_block.signing_proof)
     if not result:
+        print("Incorrect signatures, refusing to continue")
         return False, "Signatures are incorrect"
-    # Load blockchain status in memory to add the chunk
-    chain_handler = blockchain.BLOCKCHAIN()  
-    chain_handler.get_last_chunk(load=True)
-    # Adding this block to the chunk and checking if it needs to be written 
-    chain_handler.blocks.append(loaded_block)
-    if len(chain_handler.blocks) > chain_handler.chunk_size:
-        chain_handler.add_chunk_to_chain()
+    # Populate the agreement pool with a new block on the first free validator
+    for validator in node.agreement_pool:
+        if node.agreement_pool.get(validator) == "":
+            node.agreement_pool[validator]["from"] = loaded_block.signer
+            node.agreement_pool[validator]["data"] = loaded_block.tx_list
+            return True, ""
+    # If no space, return
+    return False, "Out of space"
         
 @app.route("/time", methods=['GET'])
 def time_response():
+    print("Called time")
     return {
-        "time": str(time.time)
+        "time": str(time.time())
     }
     
 # While the rpc is waiting, a continuos process is available to perform tasks
 def heartbeat():
+    global forge_time
+    print("OK: Heartbeat service started successfully")
     forge_time = False
     while True:
         time.sleep(1)
         # TODO is hardcoded to false while consensus is still in development
+        # Detecting time passed from timestamp and syncing, it is easy to detect when is time to vote
         if forge_time:
-            pass
+            voting_routine()
         
 # Booting the node
 if __name__ == "__main__":
+    version = 0.1
+    print("\n=====\nDoch - The Domus Chain official implementation v. " + str(version) + "\n")
+    host = '0.0.0.0'
+    port = 7200
+    print("\n--------------------------------------------\n")
     # A joined subprocess ensure non blocking tasks
     beat = multiprocessing.Process(target=heartbeat)
     beat.start()
-    app.run(debug=True, use_reloader=False)
-    beat.join()
+    http_server = WSGIServer((host, port), app)
+    serve = multiprocessing.Process(target=http_server.serve_forever)
+    serve.start()
+    print("\nListening on " + str(host) + ":" + str(port))
+    connection.wait([beat.sentinel, serve.sentinel])

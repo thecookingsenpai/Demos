@@ -8,8 +8,9 @@ import blocks
 import consensus
 import blockchain
 import time
-import timesync
 import json
+import random
+import os
 
 class ENTITY:
     
@@ -84,8 +85,9 @@ class ENTITY:
                 with open('private.pem','w') as f:
                     f.write(self.key.exportKey('PEM'))
             else:
-                print(self.pubkey)
-                print(self.key)
+                print("Your public address is: " + str(hex(self.pubkey.n)))
+                print("\nWARNING: Your private key follows: do not give it to anyone.")
+                print(hex(self.key.n))
         else:
             with open(existing_private) as f:
                 self.key = RSA.import_key(f.read())
@@ -102,6 +104,7 @@ class ENTITY:
             self.peers = []
         # Load the consensus method
         self.democracy = consensus.CONSENSUS()
+        self.agreement_pool = consensus.AGREEMENT_POOL()
         # Prepare the data to handle the whole chain
         self.chain = blockchain.BLOCKCHAIN()
     
@@ -130,7 +133,12 @@ class ENTITY:
     def get_txs_from_memory(self):
         with open("node_data/mempool", "rb") as mempool:
             return mempool.read()
-    
+    # Retrieve pickled mempool
+    def clear_mempool(self):
+        os.remove("node_data/mempool")
+        with open("node_data/mempool", "wb") as mempool:
+            mempool.write("MEMPOOL\n".encode("UTF-8"))
+        
     # Store a valid tx in the mempool
     def mempool_tx(self, tx_json):
        actual_mempool =pickle.load(self.get_txs_from_memory())
@@ -139,7 +147,6 @@ class ENTITY:
            pickle.dump(mempool, new_mempool)
     
     def create_block(self):
-        # TODO Condizioni!
         tx_list = self.get_txs_from_memory()
         if len(tx_list) == 0:
             return False, "No tx"
@@ -149,6 +156,7 @@ class ENTITY:
         block.tx_list = tx_list
         block.signers.append(self.pubkey)
         block.signing_proofs.append(self.sign_data(block.block_number))
+        return block
                
     def broadcast_block(self, block, specified_nodes = []):
         nodes = specified_nodes.extend(self.peers)
@@ -156,9 +164,15 @@ class ENTITY:
             try:
                 destination = self.OtherNode(node[0], node[1])
                 destination.propagate_block(block)
-                return 200, "Broadcasted to " + node[0]
             except requests.ConnectionError:
-                return 404, "Node " + node[0] + " is offline"    
+                pass  
+    
+    # Random extraction
+    def decide_votation(self):
+        range_max = len(self.peers) - 1
+        indication = random.randint(0, range_max)
+        candidate = self.peers[indication]
+        self.broadcast_vote(candidate)
     
     def broadcast_vote(self, candidate):
         # Sign the vote
@@ -188,6 +202,7 @@ class ENTITY:
             return True
         except:
             return False
+            
             
     def sign_data(self, data):
         signing_key = self.key

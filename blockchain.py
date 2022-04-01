@@ -1,16 +1,21 @@
 import blocks
+import transactions
 import os
 import pickle
 
+
 class BLOCKCHAIN:
     def __init__(self, genesis="genesis.json") -> None:
-        with open("genesis.json", "r") as genesis_file:
+        with open(genesis, "r") as genesis_file:
             self.genesis = genesis_file.read()
+            self.initialize_first_block()
         self.blocks = []
         self.last_block = 0
-        # A chunk is a file containing chunk_size blocks
-        self.chunk_size = 5000
         self.last_chunk = 0
+        # Genesis variables
+        # A chunk is a file containing chunk_size blocks
+        self.chunk_size = self.genesis.get("chunk_size")
+        self.genesis_timestamp = self.genesis.get("timestamp")
     
     def initialize_first_block(self):
         # Conditions
@@ -20,8 +25,10 @@ class BLOCKCHAIN:
             return False, "Block number is too high"
         if not len(self.blocks) == 0:
             return False, "Blockchain isn't empty"
-        # Create the block, add it to the first chunk and switch the last_block to 1
+        # Create the block, add init to the first chunk and switch the last_block to 1
         first_block = blocks.BLOCK()
+        genesis_tx = transactions.TRANSACTION()
+        genesis_tx.data["instructions"] = self.genesis
         self.last_block = 1
         self.blocks.append(first_block)
     
