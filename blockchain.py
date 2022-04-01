@@ -2,16 +2,28 @@ import blocks
 import transactions
 import os
 import pickle
-
+from tinydb import TinyDB, Query
 
 class BLOCKCHAIN:
     def __init__(self, genesis="genesis.json") -> None:
-        with open(genesis, "r") as genesis_file:
-            self.genesis = genesis_file.read()
-            self.initialize_first_block()
-        self.blocks = []
-        self.last_block = 0
-        self.last_chunk = 0
+        # Trying to load existing chain
+        self.db = TinyDB("./node_data/blockchain.json")
+        extract = Query()
+        chaindata = self.db.search(extract.chain) # Special table containing general values 
+                                                  # as in  
+                                                  # {'block_number': 123, 
+                                                  # 'average_block_time': 12}
+        try:
+            self.last_block = chaindata[0].get("block_number")
+        except:
+            self.last_block = 0
+        if self.last_block == 0:
+            # Genesis
+            with open(genesis, "r") as genesis_file:
+                self.genesis = genesis_file.read()
+                self.initialize_first_block()
+            self.blocks = []
+            self.last_chunk = 0
         # Genesis variables
         # A chunk is a file containing chunk_size blocks
         self.chunk_size = self.genesis.get("chunk_size")

@@ -74,7 +74,11 @@ class ENTITY:
                 return True
     
     # Proper node structure
-    def __init__(self, existing_private="", to_file=False, peerFile="") -> None:
+    def __init__(self, existing_private="", to_file=False, peerFile="", genesis="genesis.json") -> None:
+        # Load genesis node option
+        with open(genesis, "r") as genesis_file:
+            self.genesis = genesis_file.read()
+            self.block_time = self.genesis.get("block_time")
         # Creating or restoring a wallet
         if existing_private=="":
             self.key = RSA.generate(2048)
@@ -98,7 +102,9 @@ class ENTITY:
             with open(peerFile) as peers:
                 self.peers = peers.read()
                 syncing_peer = self.OtherNode(peers[0][0], str(peers[0][1]))
-                self.start_time = syncing_peer.sync()
+                self.start_time = time.time()
+                self.checkpoint_time = time.time()
+                self.synced_time = syncing_peer.sync()
         else:
             self.start_time = time.time()
             self.peers = []
@@ -133,6 +139,10 @@ class ENTITY:
     def get_txs_from_memory(self):
         with open("node_data/mempool", "rb") as mempool:
             return mempool.read()
+        
+    def execute_tx(tx):
+        pass
+        
     # Retrieve pickled mempool
     def clear_mempool(self):
         os.remove("node_data/mempool")
