@@ -9,7 +9,9 @@ class TRANSACTION:
             "from": "",
             "to": "",
             "value": 0,
-            "instructions": {}
+            "instructions": {
+                "quantity": 0
+            }
         }
         self.signature = ""
         self.signature_ascii = ""

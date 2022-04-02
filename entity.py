@@ -11,6 +11,7 @@ import time
 import json
 import random
 import os
+import executor
 
 class ENTITY:
     
@@ -140,8 +141,17 @@ class ENTITY:
         with open("node_data/mempool", "rb") as mempool:
             return mempool.read()
         
-    def execute_tx(tx):
-        pass
+    def execute_tx(tx):        
+        tx_data = tx.get("data")
+        instructions = tx_data.get("instructions")
+        total_instructions = len(instructions)
+        for operation in instructions:
+            type_of = instructions.get(operation)
+            arguments = instructions.get("arguments")
+            execute = executor.EXECUTE(type_of, arguments)
+            execute.run()
+                
+                
         
     # Retrieve pickled mempool
     def clear_mempool(self):
