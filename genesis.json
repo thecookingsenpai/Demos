@@ -1,7 +1,5 @@
 {
-	/// Blockchain options
 	"chunk_size": 5000,
 	"timestamp": 0,
-	/// Node options
 	"block_time": 5
 }

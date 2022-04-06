@@ -11,7 +11,9 @@ class TRANSACTION:
             "value": 0,
             "instructions": {
                 "quantity": 0
-            }
+            },
+            "validated": False,
+            "receipt": "uninitialized"
         }
         self.signature = ""
         self.signature_ascii = ""

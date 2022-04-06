@@ -77,22 +77,24 @@ class ENTITY:
     # Proper node structure
     def __init__(self, existing_private="", to_file=False, peerFile="", genesis="genesis.json") -> None:
         # Load genesis node option
+        self.checkpoint_time = time.time()
         with open(genesis, "r") as genesis_file:
-            self.genesis = genesis_file.read()
+            self.genesis = json.loads(genesis_file.read())
             self.block_time = self.genesis.get("block_time")
         # Creating or restoring a wallet
         if existing_private=="":
-            self.key = RSA.generate(2048)
-            self.pubkey = self.key.publickey()
-            if to_file:      
-                with open('public.pub','w') as f:
-                    f.write(self.pubkey.exportKey('PEM'))
-                with open('private.pem','w') as f:
-                    f.write(self.key.exportKey('PEM'))
-            else:
-                print("Your public address is: " + str(hex(self.pubkey.n)))
-                print("\nWARNING: Your private key follows: do not give it to anyone.")
-                print(hex(self.key.n))
+            if not os.path.exists("public.pub"):
+                self.key = RSA.generate(2048)
+                self.pubkey = self.key.publickey()
+                if to_file:      
+                    with open('public.pub','w') as f:
+                        f.write(self.pubkey.exportKey('PEM'))
+                    with open('private.pem','w') as f:
+                        f.write(self.key.exportKey('PEM'))
+                else:
+                    print("Your public address is: " + str(hex(self.pubkey.n)))
+                    print("\nWARNING: Your private key follows: do not give it to anyone.")
+                    print(hex(self.key.n))
         else:
             with open(existing_private) as f:
                 self.key = RSA.import_key(f.read())
@@ -104,7 +106,6 @@ class ENTITY:
                 self.peers = peers.read()
                 syncing_peer = self.OtherNode(peers[0][0], str(peers[0][1]))
                 self.start_time = time.time()
-                self.checkpoint_time = time.time()
                 self.synced_time = syncing_peer.sync()
         else:
             self.start_time = time.time()
@@ -141,16 +142,24 @@ class ENTITY:
         with open("node_data/mempool", "rb") as mempool:
             return mempool.read()
         
+    # Register the execution of a tx
     def execute_tx(tx):        
         tx_data = tx.get("data")
+        # "instructions" key contains (at the moment 1) methods
         instructions = tx_data.get("instructions")
         total_instructions = len(instructions)
         for operation in instructions:
             type_of = instructions.get(operation)
+            # Arguments are then used to build an execute class
             arguments = instructions.get("arguments")
             execute = executor.EXECUTE(type_of, arguments)
-            execute.run()
-                
+            # Which then is ran
+            get_result, get_why = execute.run()
+            if not get_result:
+                return False, get_why
+            # If we are here, everything is ok
+            
+        
                 
         
     # Retrieve pickled mempool

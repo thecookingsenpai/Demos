@@ -1,0 +1,29 @@
+- Core features
+    - Finish file api
+        - Include in a block
+        - Rate limit
+        - Attack protection
+    - Create middlewares for chains
+    - API for web2 data
+    - Basic upgradable structures
+    - DAO approach in:
+        - Consensus
+        - Validation
+        - Proposals
+        - Distribution
+        - Fallout
+    - Solid tinydb structure for the chain
+    - Basic security features
+    - Small tax system
+- Advanced features
+    - Create on chain structures for chains
+    - Demoscript
+        - Tokens
+        - NFTs
+        - Addresses
+        - Operators
+        - How to do it @done
+    - Advanced upgradable structures
+- dApps
+    - Swap
+    - NFT Marketplace
